@@ -45,7 +45,7 @@ cp settings.json ~/.claude/settings.json
 If you already have one, you need to MERGE manually. The critical sections are:
 
 - `permissions.deny` - add all the deny rules from the template
-- `hooks.PreToolUse` - add all the hook entries
+- `hooks.PreToolUse` - add all the hook entries, and delete any older escalation hook whose command matches the one in `legacy-hooks.json` at the repo root (it never blocked anything)
 - `enableAllProjectMcpServers` - make sure this is `false`
 
 Do NOT just overwrite your existing file if you have custom settings.
@@ -168,7 +168,7 @@ Blocks dangerous bash commands BEFORE they execute:
 - **Direct pushes to protected branches**: `git push origin main/master/production`
 - **Pipe-to-shell**: `curl ... | bash`, `wget ... | sh`
 - **Data exfiltration**: Connections to ngrok, requestbin, webhook.site, etc.
-- **Permission escalation**: Attempts to use `--dangerously-skip-permissions` from within a session
+- **Permission escalation**: Any command that mentions `dangerously-skip-permissions`, `bypass-permissions` or `bypassPermissions` (case-insensitive). This covers the CLI flags, `--permission-mode bypassPermissions`, and writing `"defaultMode": "bypassPermissions"` into a settings file
 - **Commit-time secret scan (`scan-commit.sh`)**: intercepts `git commit`, runs the staged diff through the same regex set as the prompt scanner, and blocks the commit if a credential is present. Closes the gap where Claude writes a secret into code and then commits it — the UserPromptSubmit scanner only catches credentials that arrived *via* the prompt.
 
 **Limitation:** Pattern matching, not semantic analysis. Obfuscated commands can bypass. But it catches the common and accidental cases, which is 90%+ of real risk.

@@ -2,6 +2,17 @@
 
 All notable changes to claude-guardrails are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`full/prompt-injection-defender.sh`** - the PostToolUse scanner never fired. It read `.tool_output`, but Claude Code passes the tool result as `tool_response` (an object for most tools, such as `{"stdout": ..., "stderr": ...}` for Bash or `{"file": {"content": ...}}` for Read), so the scanned text was always empty. The script now collects the string values inside `tool_response` (falling back to `tool_output`), skipping metadata and binary keys (`base64`, `filePath`, `file_path`, `url`, `type`, `mimeType`, `codeText`), and scans them in a single `jq` pass that also checks the tool name: one combined regex first, then per-pattern checks only on a hit. A pattern that fails to compile is skipped and reported in `systemMessage` instead of silently disabling the whole scan. Its warning used an undocumented top-level `message` field and was built with `echo`, so backslashes in matched patterns could produce invalid JSON. It now emits `hookSpecificOutput.additionalContext`, the documented PostToolUse field that adds text to Claude's context, plus a `systemMessage` for the user, built with `jq`. Malformed input now exits 0 instead of 5. The script still warns only and never blocks.
+- **`full/settings.json`** - the permission-escalation PreToolUse hook never blocked. Its pattern starts with `--`, so `grep -qEi "--dangerously-skip-permissions|..."` read it as an unknown option, exited 2, and the `if` treated that as no match. The pattern is now passed with `-e` and matches the tokens `dangerously-skip-permissions` and `bypass-permissions` / `bypassPermissions` anywhere in the command (case-insensitive), so it also catches `--permission-mode bypassPermissions` in any spacing or quoting and edits that set `defaultMode` to bypass in a settings file. The old no-op entry is listed in the new `legacy-hooks.json`; `install.sh` drops it when upgrading and `uninstall.sh` removes it too. Both match it by command text with whitespace ignored, so hand-merged copies with extra fields such as `timeout` are also removed, and both still run if `legacy-hooks.json` is missing. `uninstall.sh` now reports the number of PreToolUse entries it actually removed.
+
+### Added
+
+- **New `injection-defender`, `escalation-hook` and `legacy-hook-migration` CI scenarios** (11 + 11 + 6 assertions) - feed realistic `tool_response` payloads (Bash, nested Read content, backslash hex escapes, metadata-only triggers, unscanned tools, benign output, malformed input) to the installed defender; run the installed escalation hook through `sh -c`, as Claude Code does, against every bypass form and ordinary commands; and check the old escalation entry is removed on install and uninstall. Added to the workflow matrix.
+
 ## [0.4.3] - 2026-11-09
 
 ### Fixed

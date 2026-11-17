@@ -59,10 +59,18 @@ if [[ -f "$SETTINGS" ]]; then
   # rule when its parenthesised twin is one of the rules being installed.
   # A rule with no twin in the variant list is the user's own and survives
   # untouched, in whichever form they wrote it.
-  jq -s '
+  LEGACY_HOOKS="$SCRIPT_DIR/legacy-hooks.json"
+  [[ -f "$LEGACY_HOOKS" ]] || LEGACY_HOOKS=/dev/null
+  jq -s --slurpfile legacy "$LEGACY_HOOKS" '
     def paren:
       if test("^[A-Za-z]+\\(") then .
       else sub("^(?<v>[A-Za-z]+) +(?<p>.+)$"; "\(.v)(\(.p))") end;
+    def drop_legacy($cmds):
+      map(if (.hooks | type) == "array"
+          then (.hooks |= map(select((.command // "" | gsub("\\s"; "")) | IN($cmds[]) | not)))
+            | select(.hooks != [])
+          else . end);
+    [($legacy[0].PreToolUse // [])[].hooks[]?.command | gsub("\\s"; "")] as $legacy_cmds |
     .[0] as $existing | .[1] as $new |
     ($existing * $new) |
     ($new.permissions.deny // []) as $variant_deny |
@@ -73,7 +81,8 @@ if [[ -f "$SETTINGS" ]]; then
       | unique
     ) |
     .hooks.PreToolUse = (
-      [($existing.hooks.PreToolUse // [])[], ($new.hooks.PreToolUse // [])[]]
+      [(($existing.hooks.PreToolUse // []) | drop_legacy($legacy_cmds))[],
+       ($new.hooks.PreToolUse // [])[]]
       | unique
     ) |
     .hooks.UserPromptSubmit = (

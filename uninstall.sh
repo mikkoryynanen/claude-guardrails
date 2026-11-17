@@ -61,7 +61,13 @@ echo "  Backed up current settings → settings.json.pre-uninstall"
 
 VARIANT_SETTINGS="$VARIANT_DIR/settings.json"
 
-jq --slurpfile remove "$VARIANT_SETTINGS" '
+LEGACY_HOOKS="$SCRIPT_DIR/legacy-hooks.json"
+[[ -f "$LEGACY_HOOKS" ]] || LEGACY_HOOKS=/dev/null
+HOOKS_BEFORE=$(jq '.hooks.PreToolUse // [] | length' "$SETTINGS")
+
+jq --slurpfile remove "$VARIANT_SETTINGS" --slurpfile legacy "$LEGACY_HOOKS" '
+  [($legacy[0].PreToolUse // [])[].hooks[]?.command | gsub("\\s"; "")] as $legacy_cmds |
+
   # Subtract deny rules that came from the variant
   .permissions.deny = (
     [.permissions.deny // [] | .[] |
@@ -71,7 +77,11 @@ jq --slurpfile remove "$VARIANT_SETTINGS" '
   # Subtract PreToolUse hooks that came from the variant
   .hooks.PreToolUse = (
     [.hooks.PreToolUse // [] | .[] |
-      select(. as $hook | ($remove[0].hooks.PreToolUse // []) | map(. == $hook) | any | not)]
+      select(. as $hook | ($remove[0].hooks.PreToolUse // []) | map(. == $hook) | any | not)
+      | if (.hooks | type) == "array"
+        then (.hooks |= map(select((.command // "" | gsub("\\s"; "")) | IN($legacy_cmds[]) | not)))
+          | select(.hooks != [])
+        else . end]
   ) |
 
   # Clean up empty arrays
@@ -84,7 +94,7 @@ jq --slurpfile remove "$VARIANT_SETTINGS" '
 ' "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
 
 DENY_REMOVED=$(jq '.permissions.deny | length' "$VARIANT_SETTINGS")
-HOOKS_REMOVED=$(jq '.hooks.PreToolUse | length' "$VARIANT_SETTINGS")
+HOOKS_REMOVED=$((HOOKS_BEFORE - $(jq '.hooks.PreToolUse // [] | length' "$SETTINGS")))
 echo "  Removed $DENY_REMOVED deny rules"
 echo "  Removed $HOOKS_REMOVED PreToolUse hooks"
 
